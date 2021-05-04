@@ -4,7 +4,7 @@
 # imports
 from dotenv import load_dotenv
 from os import getenv
-from discord import utils
+from discord import utils, Embed
 from discord.ext import commands
 
 # fetch env vars
@@ -12,7 +12,7 @@ load_dotenv()
 TOKEN = getenv('TOKEN')
 
 # create client
-bot = commands.Bot(command_prefix='+')
+bot = commands.Bot(command_prefix='invite+')
 
 # log startup
 @bot.event
@@ -46,50 +46,57 @@ async def echo(ctx, *args):
         await channel.send(" ".join(args[1:]))
         return
 
-# return organized invites
-def grab_invites(invites:list):
-    pass
+# return organized invites, filter out
+def gen_lb(raw_invites:list):
+    # loop through raw_invite_list, remove duplicate invitees, total sum uses
+    invites = {}
+    for invite in raw_invites:
+        # Add  value, otherwise, create
+        try:
+            invites[invite.inviter.name].uses += invite.uses
+        except Exception as _:
+            invites[invite.inviter.name] = invite
+    # clean funky characters
+    clean_invites = {}
+    for username in invites:
+        new_user = ''.join(char for char in username if char.isalnum())
+        # replace
+        clean_invites[new_user] = invites[username]
+    # sort invites by uses, descending, returns keys in order
+    key = sorted(clean_invites, reverse=True, key=lambda invite: clean_invites[invite].uses)
+    print((clean_invites, key))  
+    # return
+    return (clean_invites, key)
 
 # leaderboard
-@bot.command(name="leaderboard", aliases=["lb", "leader"])
+@bot.command(name="leaderboard")
 async def leaderboard(ctx):
     # grab invites
     raw_invite_list = await ctx.guild.invites()
-    # loop through raw_invite_list, remove duplicate invitees, total sum uses
-    invite_list = {}
-    for invite in raw_invite_list:
-        # Add  value, otherwise, create
-        try:
-            invite_list[invite.inviter.name] += invite.uses
-        except Exception as _:
-            invite_list[invite.inviter.name] = invite.uses
-    # sort invites by uses, descending
-    invite_list = sorted(invite_list, reverse=True, key=lambda invite:invite["uses"])
+    # generate invite leaderboard
+    invites, ranked_keys = gen_lb(raw_invite_list)
     # grab longest username
     user_col_size = 0
-    for key in invite_list.keys():
-        if len(key) > user_col_size:
-            user_col_size = len(key)
+    for user in invites:
+        if len(user) > user_col_size:
+            user_col_size = len(user)
     # generate header
-    leaderboard = f"Username{' '*abs(user_col_size-8)}    Invites \n"
-    # spacing line
-    leaderboard += f"{''*len(leaderboard)}"
-    # generate leaderboard
-    lb_unsorted = {}
-    for key in invite_list.keys():
-        # get whitespace to align name column
-        user_col_diff = user_col_size-len(key)
-        # generate leaderboard row
-        row = f"{key}{' '*user_col_diff}    {invite_list[key]}\n"
-        # add row to dict to be sorted
-        lb_unsorted[invite_list[key]]=row
-    # sort leaderboard
-    lb_sorted_key = sorted(lb_unsorted, reverse=True)
-    # add sorted to leaderboard
-    for key in lb_sorted_key:
-        leaderboard+=lb_unsorted[key]
-    # send to discord
-    await ctx.channel.send("```"+leaderboard+"```")
+    col_padding = abs(user_col_size-8)
+    leaderboard = f"Username{' '*col_padding} | Uses\n"
+    # spacing line         
+    leaderboard += f"--------{'-'*col_padding}-|-----\n"
+    # generate leaderboard 
+    for user in ranked_keys:
+        # grab invite      
+        invite = invites[user]
+        # grab spacing inbetween name / uses
+        col_padding = user_col_size - len(user)
+        # generate line     
+        leaderboard += f"{user}{' '*col_padding} | {invite.uses}\n"
+    # send to discord via embed
+    embed = Embed(title="", color=0x7289da)
+    embed.add_field(name="Invite Leaderboard", value="```"+leaderboard+"```", inline=False)   
+    await ctx.channel.send(embed=embed)
 
 
 # execute bot
